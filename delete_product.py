@@ -70,10 +70,16 @@ class WooDeleter:
         """
         Xóa một category sản phẩm (taxonomy) theo ID
         """
+        try:
+            response = self._request('DELETE', f'/products/categories/{cat_id}', {'force': True})
+            return response
+        except requests.exceptions.HTTPError as e:
+            print(f"Error response: {e.response.text}")
+            raise  # Re-raise the error after printing it
         return self._request('DELETE', f'/products/categories/{cat_id}', {'force': True})
 
 
-def run_delete(base_url, consumer_key, consumer_secret, max_workers, categories):
+def run_delete(base_url, consumer_key, consumer_secret, max_workers):
     """
     Hàm chính: hiển thị menu lựa chọn và thực thi các thao tác xóa/cập nhật
     Tham số:
@@ -82,6 +88,15 @@ def run_delete(base_url, consumer_key, consumer_secret, max_workers, categories)
       - categories: danh sách ID category khả dụng (được truyền từ main)
     """
     wo = WooDeleter(base_url, consumer_key, consumer_secret, max_workers, batch_size=100)
+
+    categories = []
+    page = 1
+    while True:
+        cat_data = wo._request('GET', '/products/categories', {'per_page': 100, 'page': page})
+        if not cat_data:
+            break
+        categories.extend(cat_data)
+        page += 1
 
     # Hiển thị menu chức năng
     menu = '''
@@ -109,8 +124,9 @@ def run_delete(base_url, consumer_key, consumer_secret, max_workers, categories)
     # THAO TÁC 1: remove association khỏi category và xóa orphan products
     if choice == '1':
         for cat in selected:
+            cat_id = cat['id']
             print(f"\n⏳ Xử lý Category {cat} …")
-            prods = wo.list_products_by_category(cat)
+            prods = wo.list_products_by_category(cat_id)
             to_update, to_delete = [], []
 
             # Phân loại: sản phẩm có nhiều category thì update, khác thì delete
@@ -136,22 +152,32 @@ def run_delete(base_url, consumer_key, consumer_secret, max_workers, categories)
                 print(f"✔ Deleted {len(batch)} orphan products")
 
             # Cuối cùng xóa category trống
-            wo.delete_category(cat)
+            wo.delete_category(cat_id)
             print(f"✔ Deleted Category {cat}")
 
     # THAO TÁC 2: xóa hẳn tất cả sản phẩm trong category và xóa category
     elif choice == '2':
         for cat in selected:
+            cat_id = cat['id']
             print(f"\n⏳ Xóa hẳn products & Category {cat} …")
-            prods = wo.list_products_by_category(cat)
+            prods = wo.list_products_by_category(cat_id)
+            if not prods:
+                print(f"❗ Không có sản phẩm trong Category {cat['name']}.")
             ids = [p['id'] for p in prods]
             # Bulk delete theo batch
             for batch in chunked(ids, wo.batch_size):
                 wo.batch_delete_products(batch)
                 print(f"✔ Deleted {len(batch)} products")
             # Xóa category sau cùng
-            wo.delete_category(cat)
-            print(f"✔ Deleted Category {cat}")
+             # Kiểm tra xem còn sản phẩm nào trong category không
+            remaining_products = wo.list_products_by_category(cat_id)
+            if len(remaining_products) == 0:
+                # Nếu không còn sản phẩm nào thì xóa category
+                print(f"⏳ Đang xóa Category {cat['name']} ...")
+                wo.delete_category(cat_id)
+                print(f"✔ Đã xóa Category {cat['name']}")
+            else:
+                print(f"❗ Category {cat['name']} vẫn còn sản phẩm, không thể xóa.")
 
     # THAO TÁC 3: xóa sản phẩm theo list ID nhập tay
     elif choice == '3':

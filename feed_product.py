@@ -116,7 +116,7 @@ def build_product_payload(row, helper):
 
     # Xử lý danh sách ảnh, tách theo ký tự ',,'
     img_urls = [u.strip() for u in row['Images'].split(',,') if u.strip()]
-    images = [{'fifu_image_url': url} for url in img_urls]
+    # images = [{'fifu_image_url': url} for url in img_urls]
 
     # Build payload product
     payload = {
@@ -125,9 +125,45 @@ def build_product_payload(row, helper):
         'regular_price': row.get('Regular price', ''),        # Giá bán
         'description': row.get('Description', ''),            # Mô tả dài
         'categories': [{'id': cid} for cid in cat_ids if cid],# Danh sách category id
-        'images': images,                                     # Hình ảnh
+        # 'images': images,                                     # Hình ảnh
         'name': row.get('Name', row.get('SKU', '')),         # Tên sản phẩm hoặc fallback SKU
     }
+    meta = []
+    for idx, url in enumerate(img_urls):
+        if idx == 0:
+            meta.append({
+                'key': 'fifu_image_url',
+                'value': url
+            })
+            # meta.append({
+            #     'key': 'fifu_list_url',
+            #     'value': url
+            # })
+        else:
+            index_image = idx-1
+            meta.append({
+                'key': f'fifu_image_url_{index_image}',
+                'value': url
+            })
+            # meta.append({
+            #     'key': f'fifu_list_url_{index_image}',
+            #     'value': url
+            # })
+    if meta:
+        payload['meta_data'] = meta
+
+    if len(img_urls) == 1:
+        # Nếu chỉ có 1 ảnh, đặt giá trị fifu_list_url là ảnh đó
+        payload['meta_data'].append({
+            'key': 'fifu_list_url',
+            'value': img_urls[0]
+        })
+    elif len(img_urls) > 1:
+        # Nếu có nhiều ảnh, nối các link bằng dấu '|'
+        payload['meta_data'].append({
+            'key': 'fifu_list_url',
+            'value': '|'.join(img_urls)
+        })
     return payload
 
 def feed_products(csv_path, base_url, ck, cs,
